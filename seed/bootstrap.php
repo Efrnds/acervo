@@ -150,6 +150,7 @@ acervo_roteiro();
 
 if (acervo_find_collection()) {
     fwrite(STDOUT, "Coleção já existe.\n");
+    acervo_publish_sala();
     return;
 }
 
@@ -231,3 +232,117 @@ foreach ($obras as $obra) {
 }
 
 fwrite(STDOUT, "Coleção Gravuras do Século XX criada.\n");
+acervo_publish_sala();
+
+function acervo_publish_sala() {
+    $collection_id = acervo_find_collection();
+    if (!$collection_id) {
+        return;
+    }
+
+    $collection = new \Tainacan\Entities\Collection($collection_id);
+    $collection->set_default_view_mode('masonry');
+    $collection->set_enabled_view_modes(['masonry', 'cards', 'table']);
+    if ($collection->validate()) {
+        \Tainacan\Repositories\Collections::get_instance()->insert($collection);
+    } else {
+        fwrite(STDERR, "Não ajustei o modo de exibição.\n");
+        fwrite(STDERR, print_r($collection->get_errors(), true));
+    }
+
+    acervo_attach_plates($collection);
+
+    $page = get_page_by_path('sala');
+    $content = '<p>Obras fictícias para treino de catalogação. Cada ficha abre o registro completo.</p>' . "\n" . '[acervo_sala]';
+    if (!$page) {
+        $page_id = wp_insert_post([
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'post_name' => 'sala',
+            'post_title' => 'Sala de gravura',
+            'post_content' => $content,
+        ]);
+    } else {
+        $page_id = $page->ID;
+        wp_update_post([
+            'ID' => $page_id,
+            'post_title' => 'Sala de gravura',
+            'post_content' => $content,
+        ]);
+    }
+
+    update_option('show_on_front', 'page');
+    update_option('page_on_front', (int) $page_id);
+
+    $menu = wp_get_nav_menu_object('Principal');
+    $menu_id = $menu ? (int) $menu->term_id : (int) wp_create_nav_menu('Principal');
+    $existing = wp_get_nav_menu_items($menu_id) ?: [];
+    foreach ($existing as $item) {
+        wp_delete_post($item->ID, true);
+    }
+
+    $links = [
+        'Sala' => home_url('/'),
+        'Busca com filtros' => get_permalink($collection_id),
+        'Roteiro' => home_url('/roteiro/'),
+    ];
+    foreach ($links as $title => $url) {
+        wp_update_nav_menu_item($menu_id, 0, [
+            'menu-item-title' => $title,
+            'menu-item-url' => $url,
+            'menu-item-status' => 'publish',
+            'menu-item-type' => 'custom',
+        ]);
+    }
+    $locations = get_theme_mod('nav_menu_locations');
+    if (!is_array($locations)) {
+        $locations = [];
+    }
+    $locations['navMenubelowHeader'] = $menu_id;
+    set_theme_mod('nav_menu_locations', $locations);
+    fwrite(STDOUT, "Sala publicada.\n");
+}
+
+function acervo_attach_plates($collection) {
+    $posts = get_posts([
+        'post_type' => $collection->get_db_identifier(),
+        'post_status' => 'publish',
+        'posts_per_page' => -1,
+    ]);
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    $items = \Tainacan\Repositories\Items::get_instance();
+    foreach ($posts as $post) {
+        $item = new \Tainacan\Entities\Item($post);
+        if ($item->get_document_type() === 'attachment' && $item->get_document()) {
+            continue;
+        }
+        $path = '/seed/placas/' . $post->post_name . '.png';
+        if (!is_file($path)) {
+            fwrite(STDERR, "Sem placa para {$post->post_name}.\n");
+            continue;
+        }
+        $tmp = wp_tempnam($post->post_name . '.png');
+        copy($path, $tmp);
+        $attachment_id = media_handle_sideload([
+            'name' => $post->post_name . '.png',
+            'tmp_name' => $tmp,
+        ], $item->get_id());
+        if (is_wp_error($attachment_id)) {
+            fwrite(STDERR, $attachment_id->get_error_message() . "\n");
+            continue;
+        }
+        $item->set_document((string) $attachment_id);
+        $item->set_document_type('attachment');
+        set_post_thumbnail($item->get_id(), $attachment_id);
+        if (!$item->validate()) {
+            fwrite(STDERR, "Placa não entrou em {$post->post_name}.\n");
+            fwrite(STDERR, print_r($item->get_errors(), true));
+            continue;
+        }
+        $items->insert($item);
+    }
+}

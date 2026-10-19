@@ -67,6 +67,13 @@ if ! wp option get acervo_csv_imported >/dev/null 2>&1; then
 fi
 
 wp rewrite flush --hard
+wp config set WP_CACHE true --raw
+wp config set DISABLE_WP_CRON true --raw
+wp config set WP_POST_REVISIONS 5 --raw
+hello_id="$(wp post list --post_type=post --name=hello-world --field=ID --format=ids)"
+if [ -n "$hello_id" ]; then
+  wp post delete $hello_id --force
+fi
 echo "Pronto: ${WP_URL}"
 echo "Usuário: ${WP_ADMIN_USER}"
 echo "Painel: ${WP_URL}/wp-admin"

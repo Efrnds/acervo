@@ -37,6 +37,7 @@ services:
         condition: service_healthy
     ports:
       - "8090:80"
+    command: ["bash", "-lc", "a2enmod deflate >/dev/null && exec apache2-foreground"]
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_USER: ${DB_USER:?}
@@ -47,6 +48,10 @@ services:
       - ./config/mpm-prefork.conf:/etc/apache2/mods-available/mpm_prefork.conf:ro
       - ./config/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
       - ./config/hardening.conf:/etc/apache2/conf-enabled/hardening.conf:ro
+      - ./config/deflate.conf:/etc/apache2/conf-enabled/deflate.conf:ro
+      - ./config/opcache.ini:/usr/local/etc/php/conf.d/opcache-acervo.ini:ro
+      - ./mu-plugins:/var/www/html/wp-content/mu-plugins:ro
+      - ./wp-content/advanced-cache.php:/var/www/html/wp-content/advanced-cache.php:ro
     mem_limit: 384m
     logging:
       options:

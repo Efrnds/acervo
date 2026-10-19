@@ -17,6 +17,15 @@ docker compose --profile init run --rm setup
 
 `init-env.sh` mostra a senha da usuária `luiza` uma vez. O arquivo `.env` fica só na VM.
 
+Para atualizar uma instalação que já está no ar:
+
+```bash
+cd ~/acervo
+git pull
+docker compose up -d
+docker compose --profile init run --rm setup
+```
+
 Na security list da Oracle, libera a entrada TCP **8090**. Restringe ao IP de casa se der.
 
 Das 18h à meia-noite o `virada.sh` desliga este compose e sobe o OpenGym. O `docker compose start` da meia-noite sobe de novo o banco e o WordPress. O serviço `setup` tem profile `init` e não volta com eles.
