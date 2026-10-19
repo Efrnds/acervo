@@ -1,0 +1,85 @@
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    command:
+      - --innodb-buffer-pool-size=64M
+      - --performance-schema=OFF
+      - --max-connections=20
+      - --table-open-cache=64
+      - --key-buffer-size=8M
+      - --skip-name-resolve
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      MARIADB_DATABASE: ${DB_NAME:?}
+      MARIADB_USER: ${DB_USER:?}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?}
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - db_data:/var/lib/mysql
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  wordpress:
+    image: wordpress:php8.3-apache
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8090:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: ${DB_USER:?}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:?}
+      WORDPRESS_DB_NAME: ${DB_NAME:?}
+    volumes:
+      - wp_data:/var/www/html
+      - ./config/mpm-prefork.conf:/etc/apache2/mods-available/mpm_prefork.conf:ro
+      - ./config/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro
+      - ./config/hardening.conf:/etc/apache2/conf-enabled/hardening.conf:ro
+    mem_limit: 384m
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  setup:
+    image: wordpress:cli-php8.3
+    profiles: ["init"]
+    user: "33:33"
+    depends_on:
+      db:
+        condition: service_healthy
+      wordpress:
+        condition: service_started
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: ${DB_USER:?}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:?}
+      WORDPRESS_DB_NAME: ${DB_NAME:?}
+      WP_URL: ${WP_URL:?}
+      WP_TITLE: ${WP_TITLE:?}
+      WP_ADMIN_USER: ${WP_ADMIN_USER:?}
+      WP_ADMIN_PASSWORD: ${WP_ADMIN_PASSWORD:?}
+      WP_ADMIN_EMAIL: ${WP_ADMIN_EMAIL:?}
+      WP_CLI_CACHE_DIR: /tmp/wp-cli-cache
+    volumes:
+      - wp_data:/var/www/html
+      - ./scripts/setup.sh:/setup.sh:ro
+      - ./seed:/seed:ro
+    entrypoint: ["sh", "/setup.sh"]
+    working_dir: /var/www/html
+
+volumes:
+  db_data:
+  wp_data:
